@@ -28,10 +28,40 @@ begin
   end loop;
   
   if col_number is null then
-     raise_application_error(-20001, 'column not found');
+     raise_application_error(-20001, 'Column ' || p_column_name || ' is not present in the source SQL query of Pivot plug-in.');
   end if;
 
   return col_number;
+end;
+
+/* Drops temporary table. */
+procedure drop_temp_table is
+begin
+  execute immediate 'drop table ' || temp_pivot_table;
+end;
+
+/* Creates a temporary table for the query result. 
+   Checks, if table already exists. */
+function create_temp_table(p_columns in dbms_sql.desc_tab,
+                           p_data    in apex_plugin_util.t_column_value_list) return boolean is
+  cnt number;
+  
+  headers    varchar2(4000); 
+begin
+  select count(*)
+    into cnt
+    from user_tables
+   where table_name = temp_pivot_table;
+
+  if cnt > 0 then
+     drop_temp_table;
+  end if;
+
+  
+
+
+
+  return true;
 end;
 
 /* Main render function for pivot plug-in                           */
@@ -40,6 +70,8 @@ function render(
   p_plugin              in apex_plugin.t_plugin,
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result is
 
+  type category_table is table of number index by varchar2(4000);
+  categories_list  category_table;
   --source_query  varchar2(32767);
   header_html      varchar2(32767);
   
@@ -48,6 +80,9 @@ function render(
   category_col_num number;
   value_col_num    number;
   columns_list     dbms_sql.desc_tab;
+  i                number;
+  s                varchar2(4000);
+  temp_created     boolean;
 begin
   /* render flow:
       - define columns: 
@@ -60,14 +95,16 @@ begin
       - output        */
   
   --source_query := substr(p_region.source, 16, length(p_region.source) - 17);
-  --htp.p(source_query);
+  --htp.p(p_region.source || '<br>');
   columns_list := get_columns(p_region.source);
   
-  category_col_num := get_column_index(columns_list, 'category');
-  value_col_num    := get_column_index(columns_list, 'value');
-    
+  for i in columns_list.first .. columns_list.last loop
+    htp.p(' column = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
+  end loop;
   
-  
+  category_col_num := get_column_index(columns_list, 'CATEGORY');
+  value_col_num    := get_column_index(columns_list, 'VALUE');
+
   query_result := apex_plugin_util.get_data (
       p_sql_statement      => p_region.source,
       p_min_columns        => 1,
@@ -76,12 +113,45 @@ begin
       p_search_type        => null,
       p_search_column_name => null,
       p_search_string      => null);
+
+  temp_created := create_temp_table(columns_list, query_result);
+  
+  -- get distinct list of categories:  
+  i := query_result(category_col_num).first;
+  while i is not null loop
+    if query_result(category_col_num)(i) is not null then
+       categories_list(query_result(category_col_num)(i)) := i;
+    end if;
+    i := query_result(category_col_num).next(i);
+  end loop;
+
+  -- calculate categories count for output:
+  category_count := nvl(to_number(p_region.attribute_02), categories_list.count);
+  
+ 
+ 
+  --htp.p('category_count = ' || category_count || '<br>');
   
   
   
+ /* select distinct column_value
+    into categories_list
+    from table(query_result(category_col_num));*/
+ /* htp.p('count of categories: ' || categories_list.count || '<br>');
   
+  s := categories_list.first;
+  while s is not null loop
+    htp.p('s = ' || s || ' category = ' || categories_list(s) || '<br>');
+    s := categories_list.next(s);
+  end loop;*/
+  /*
+  for i in categories_list.first .. categories_list.last loop
+    htp.p('i = ' || i || ' category = ' || categories_list(i) || '<br>');
   
+  end loop;
+  */
   -- test output:
+  /*
   htp.p('<table class="t-Report-report" summary="' || p_region.name || '">');
   htp.p(header_html);
   htp.p('<tbody></tbody></table><br>');
@@ -101,36 +171,19 @@ begin
   htp.p('attribute_02 = ' || p_region.attribute_02 || '<br>');
   htp.p('attribute_03 = ' || p_region.attribute_03 || '<br>');
   htp.p('attribute_04 = ' || p_region.attribute_04 || '<br>');
+  */
   
+  --drop_temp_table;
   return null;
 exception
   when others then
-  htp.p(dbms_utility.format_error_backtrace);
-  return null;
+    if temp_created then 
+      -- drop_temp_table;
+       null;
+    end if;
+    raise;
+    --htp.p(replace(dbms_utility.format_error_backtrace, chr(10), '<br>'));
+    --return null;
 end;
-/*
-function get_header_html (p_sql in varchar2) return varchar2 is
-  source_cursor    number;
-  col_count        number;
-  columns_list     dbms_sql.desc_tab;
-  html_header      varchar2(32767);
-  i                number;
-begin
-  source_cursor := dbms_sql.open_cursor;
-  dbms_sql.parse(source_cursor, p_sql, 1);
-  dbms_sql.describe_columns(source_cursor, col_count, columns_list);
-  dbms_sql.close_cursor(source_cursor);
 
-  html_header := '<thead>';
-  
-  i := columns_list.first;
-  while i is not null loop
-    html_header := html_header || '<th class="t-Report-colHead" id="' || columns_list(i).col_name || '">' || columns_list(i).col_name || '</th>';
-    i := columns_list.next(i);
-  end loop;
-  
-  html_header := html_header || '</thead>';
-  return html_header;
-end;
-*/
 end render_plugin_pivot;
