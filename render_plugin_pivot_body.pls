@@ -12,6 +12,11 @@ begin
   dbms_sql.close_cursor(source_cursor);
 
   return columns_list;
+exception
+  when others then
+    if dbms_sql.is_open(source_cursor) then
+       dbms_sql.close_cursor(source_cursor);
+    end if;
 end;
 
 /* Searches for column with name P_COLUMN_NAME in collection P_COLL.
@@ -46,8 +51,10 @@ function create_temp_table(p_columns in dbms_sql.desc_tab,
                            p_data    in apex_plugin_util.t_column_value_list) return boolean is
   cnt number;
   
-  headers    varchar2(4000); 
+  create_table_sql    varchar2(32767) := 'create table ' || temp_pivot_table || '(';
+  insert_sql          varchar2(4000);
 begin
+  -- check: if table exists (not deleted from previous run) - drop it
   select count(*)
     into cnt
     from user_tables
@@ -57,9 +64,39 @@ begin
      drop_temp_table;
   end if;
 
-  
+  -- create table script
+  for i in p_columns.first .. p_columns.last loop
+    create_table_sql := create_table_sql || p_columns(i).col_name || ' ';
+    create_table_sql := create_table_sql || 
+      case when p_columns(i).col_type = 1  then 'varchar2(4000)'
+           when p_columns(i).col_type = 2  then 'number'
+           when p_columns(i).col_type = 12 then 'date'
+      end;
+    if i = p_columns.last then
+       create_table_sql := create_table_sql || ')';
+    else
+       create_table_sql := create_table_sql || ', ';
+    end if;
+  end loop;
+  execute immediate create_table_sql;
 
-
+  -- fill the table
+  for i in p_data(p_data.first).first .. p_data(p_data.first).last loop
+    insert_sql :='insert into ' || temp_pivot_table || ' values (';
+    for j in p_data.first .. p_data.last loop
+      insert_sql := insert_sql ||
+        case when p_columns(j).col_type = 1  then '''' || p_data(j)(i) || ''''
+             when p_columns(j).col_type = 2  then p_data(j)(i)
+             when p_columns(j).col_type = 12 then 'to_date(''' || p_data(j)(i) || ''')'
+        end;
+      if j = p_data.last then
+         insert_sql := insert_sql || ')';
+      else
+         insert_sql := insert_sql || ', ';
+      end if;
+    end loop;
+    execute immediate insert_sql;
+  end loop;
 
   return true;
 end;
@@ -98,6 +135,8 @@ begin
   --htp.p(p_region.source || '<br>');
   columns_list := get_columns(p_region.source);
   
+  
+  --  DEBUG PRINT COLUMNS LIST
   for i in columns_list.first .. columns_list.last loop
     htp.p(' column = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
   end loop;
@@ -128,17 +167,11 @@ begin
   -- calculate categories count for output:
   category_count := nvl(to_number(p_region.attribute_02), categories_list.count);
   
- 
- 
-  --htp.p('category_count = ' || category_count || '<br>');
+
+
   
   
-  
- /* select distinct column_value
-    into categories_list
-    from table(query_result(category_col_num));*/
- /* htp.p('count of categories: ' || categories_list.count || '<br>');
-  
+/*  
   s := categories_list.first;
   while s is not null loop
     htp.p('s = ' || s || ' category = ' || categories_list(s) || '<br>');
@@ -173,13 +206,12 @@ begin
   htp.p('attribute_04 = ' || p_region.attribute_04 || '<br>');
   */
   
-  --drop_temp_table;
+  drop_temp_table;
   return null;
 exception
   when others then
     if temp_created then 
-      -- drop_temp_table;
-       null;
+       drop_temp_table;
     end if;
     raise;
     --htp.p(replace(dbms_utility.format_error_backtrace, chr(10), '<br>'));
