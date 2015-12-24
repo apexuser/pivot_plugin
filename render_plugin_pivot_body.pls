@@ -107,7 +107,7 @@ function render(
   p_plugin              in apex_plugin.t_plugin,
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result is
 
-  type category_table is table of number index by varchar2(4000);
+  type category_table is table of varchar2(4000) index by binary_integer;
   categories_list  category_table;
   --source_query  varchar2(32767);
   header_html      varchar2(32767);
@@ -155,19 +155,21 @@ begin
 
   temp_created := create_temp_table(columns_list, query_result);
   
-  -- get distinct list of categories:  
-  i := query_result(category_col_num).first;
-  while i is not null loop
-    if query_result(category_col_num)(i) is not null then
-       categories_list(query_result(category_col_num)(i)) := i;
-    end if;
-    i := query_result(category_col_num).next(i);
-  end loop;
-
+  -- get distinct list of categories:
+  execute immediate 'select distinct category from ' || temp_pivot_table bulk collect into categories_list;
   -- calculate categories count for output:
   category_count := nvl(to_number(p_region.attribute_02), categories_list.count);
   
 
+
+
+
+  for i in categories_list.first .. categories_list.last loop
+    htp.p('i = ' || i || ' cat = ' || categories_list(i) || '<br>');
+  end loop;
+
+  
+  
 
   
   
