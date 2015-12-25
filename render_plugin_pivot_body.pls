@@ -1,5 +1,7 @@
 create or replace package body render_plugin_pivot as
 
+type varchar_table is table of varchar2(4000) index by binary_integer;
+
 /* parses the region source query and returns the list of columns  */
 function get_columns (p_sql in varchar2) return dbms_sql.desc_tab is
   source_cursor    number;
@@ -17,6 +19,7 @@ exception
     if dbms_sql.is_open(source_cursor) then
        dbms_sql.close_cursor(source_cursor);
     end if;
+    raise;
 end;
 
 /* Searches for column with name P_COLUMN_NAME in collection P_COLL.
@@ -101,15 +104,85 @@ begin
   return true;
 end;
 
+function get_pivot_query(p_aggr_function    in varchar2,
+                         p_categories_list  in varchar2) return varchar2 is
+  pivot_query varchar2(4000);
+  
+begin
+  pivot_query := 'select * from ' || temp_pivot_table || ' pivot (' ||
+      case when p_aggr_function = 'sum'     then 'sum(value) ' 
+           when p_aggr_function = 'count'   then 'count(value) ' 
+           when p_aggr_function = 'avg'     then 'avg(value) ' 
+           when p_aggr_function = 'listagg' then 'listagg(value, '', '') within group (order by value) ' 
+           end || 
+      ' for category in (' || p_categories_list || '))';
+  
+  return pivot_query;
+end;
+
+procedure output_single_aggregate_pivot(p_sql in varchar2) is
+  source_cursor    number;
+  col_count        number;
+  columns_list     dbms_sql.desc_tab;
+  str_var          varchar2(4000);
+  num_var          number;
+  dat_var          date;
+  head_template    varchar2(100) := '<th class="t-Report-colHead" id="#COLUMN_HEADER_NAME#">#COLUMN_HEADER#</th>';
+  cell_template    varchar2(100) := '<td class="t-Report-cell" #ALIGNMENT#>#COLUMN_VALUE#</td>';
+  cell_text        varchar2(4000);
+begin
+  source_cursor := dbms_sql.open_cursor;
+  dbms_sql.parse(source_cursor, p_sql, 1);
+  dbms_sql.describe_columns(source_cursor, col_count, columns_list);
+  
+  htp.p('<table class="t-Report-report"><thead><tr>');
+  for i in columns_list.first .. columns_list.last loop
+    case when columns_list(i).col_type =  1 then dbms_sql.define_column(source_cursor, i, str_var, 4000);
+         when columns_list(i).col_type =  2 then dbms_sql.define_column(source_cursor, i, num_var);
+         when columns_list(i).col_type = 12 then dbms_sql.define_column(source_cursor, i, dat_var);
+    end case;
+    htp.p(replace(replace(head_template, '#COLUMN_HEADER_NAME#', columns_list(i).col_name), '#COLUMN_HEADER#', columns_list(i).col_name));
+  end loop;
+  
+  htp.p('</tr></thead><tbody>');
+  
+  num_var := dbms_sql.execute(source_cursor);
+  while dbms_sql.fetch_rows(source_cursor) > 0 loop
+    htp.p('<tr>');
+    for i in columns_list.first .. columns_list.last loop
+      case when columns_list(i).col_type =  1 then 
+                dbms_sql.column_value(source_cursor, i, str_var);
+                cell_text := replace(replace(cell_template, '#ALIGNMENT#', ''), '#COLUMN_VALUE#', str_var);
+           when columns_list(i).col_type =  2 then 
+                dbms_sql.column_value(source_cursor, i, num_var);
+                cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', num_var);
+           when columns_list(i).col_type = 12 then dbms_sql.column_value(source_cursor, i, dat_var);
+                cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', dat_var);
+      end case;
+      htp.p(cell_text);
+    end loop;
+    htp.p('</tr>');
+  end loop;
+  htp.p('</tbody></table>');
+  
+  dbms_sql.close_cursor(source_cursor);/*
+exception
+  when others then
+    if dbms_sql.is_open(source_cursor) then
+       dbms_sql.close_cursor(source_cursor);
+    end if;
+    raise;*/
+end;
+
 /* Main render function for pivot plug-in                           */
 function render(
   p_region              in apex_plugin.t_region,
   p_plugin              in apex_plugin.t_plugin,
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result is
 
-  type category_table is table of varchar2(4000) index by binary_integer;
-  categories_list  category_table;
-  --source_query  varchar2(32767);
+  categories_list  varchar_table;
+  aggregates_list  varchar_table;
+  pivot_queries    varchar_table;
   header_html      varchar2(32767);
   
   query_result     apex_plugin_util.t_column_value_list;
@@ -121,6 +194,7 @@ function render(
   s                varchar2(4000);
   temp_created     boolean;
   sort_categories  varchar2(100);
+  categories_sql   varchar2(4000);
 begin
   /* render flow:
       - define columns: 
@@ -132,16 +206,14 @@ begin
       - data sorting
       - output        */
   
-  --source_query := substr(p_region.source, 16, length(p_region.source) - 17);
-  --htp.p(p_region.source || '<br>');
   columns_list := get_columns(p_region.source);
   
-  
   --  DEBUG PRINT COLUMNS LIST
+  /*
   for i in columns_list.first .. columns_list.last loop
     htp.p(' column = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
   end loop;
-  
+  */
   category_col_num := get_column_index(columns_list, 'CATEGORY');
   value_col_num    := get_column_index(columns_list, 'VALUE');
 
@@ -162,17 +234,44 @@ begin
   execute immediate 'select distinct category from ' || temp_pivot_table || sort_categories 
     bulk collect into categories_list;
   
-  -- calculate categories count for output:
-  category_count := nvl(to_number(p_region.attribute_02), categories_list.count);
+--  for i in categories_list.first .. categories_list.last loop
+--    htp.p('i = ' || i || ' cat = ' || categories_list(i) || '<br>');
+ -- end loop;
+
   
-
-
-
-
-  for i in categories_list.first .. categories_list.last loop
-    htp.p('i = ' || i || ' cat = ' || categories_list(i) || '<br>');
+  -- calculate categories count for output:
+  category_count := least(nvl(to_number(p_region.attribute_02), categories_list.count), categories_list.count);
+  for i in categories_list.first .. category_count loop
+    if i = category_count then
+       categories_sql := categories_sql || '''' || categories_list(i) || ''' "' || replace(categories_list(i), '''', '') || '"';
+    else
+       categories_sql := categories_sql || '''' || categories_list(i) || ''' "' || replace(categories_list(i), '''', '') || '", ';
+    end if;
+  end loop;
+  
+  -- get list of aggregate functions for pivot:
+  select regexp_substr(p_region.attribute_01,'[^:]+', 1, level) 
+    bulk collect into aggregates_list
+    from dual
+ connect by regexp_substr(p_region.attribute_01,'[^:]+', 1, level) is not null;
+  
+  
+  for i in aggregates_list.first .. aggregates_list.last loop
+    pivot_queries(i) := get_pivot_query(aggregates_list(i), categories_sql);
+--    htp.p('pivot query for ' || aggregates_list(i) || ' is: ' || get_pivot_query(aggregates_list(i), categories_sql) || '<br>' || '<br>');
   end loop;
 
+  -- output single query result:
+  output_single_aggregate_pivot(pivot_queries(pivot_queries.first));
+  
+  
+
+/*
+
+  for i in aggregates_list.first .. aggregates_list.last loop
+    htp.p('i = ' || i || ' aggr func = ' || aggregates_list(i) || '<br>');
+  end loop;
+*/
   
   
 
@@ -214,13 +313,13 @@ begin
   */
   
   drop_temp_table;
-  return null;
+  return null;/*
 exception
   when others then
     if temp_created then 
        drop_temp_table;
     end if;
-    raise;
+    raise_application_error(SQLCODE, SQLERRM, false);*/
     --htp.p(replace(dbms_utility.format_error_backtrace, chr(10), '<br>'));
     --return null;
 end;
