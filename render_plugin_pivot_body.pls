@@ -120,6 +120,7 @@ function render(
   i                number;
   s                varchar2(4000);
   temp_created     boolean;
+  sort_categories  varchar2(100);
 begin
   /* render flow:
       - define columns: 
@@ -155,8 +156,12 @@ begin
 
   temp_created := create_temp_table(columns_list, query_result);
   
+  sort_categories := case when p_region.attribute_03 = 'asc'  then ' order by category'
+                          when p_region.attribute_03 = 'desc' then ' order by category desc' end;
   -- get distinct list of categories:
-  execute immediate 'select distinct category from ' || temp_pivot_table bulk collect into categories_list;
+  execute immediate 'select distinct category from ' || temp_pivot_table || sort_categories 
+    bulk collect into categories_list;
+  
   -- calculate categories count for output:
   category_count := nvl(to_number(p_region.attribute_02), categories_list.count);
   
