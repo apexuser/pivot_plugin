@@ -104,6 +104,7 @@ begin
   return true;
 end;
 
+/* Builds pivot query for given aggregate function    */
 function get_pivot_query(p_aggr_function    in varchar2,
                          p_categories_list  in varchar2) return varchar2 is
   pivot_query varchar2(4000);
@@ -120,6 +121,7 @@ begin
   return pivot_query;
 end;
 
+/* Outputs to a page a single pivot report */
 procedure output_single_aggregate_pivot(p_sql in varchar2) is
   source_cursor    number;
   col_count        number;
@@ -132,7 +134,6 @@ procedure output_single_aggregate_pivot(p_sql in varchar2) is
   cell_text        varchar2(4000);
 begin
   source_cursor := dbms_sql.open_cursor;
-  --htp.p(p_sql); return;
   dbms_sql.parse(source_cursor, p_sql, 1);
   dbms_sql.describe_columns(source_cursor, col_count, columns_list);
   
@@ -166,16 +167,25 @@ begin
   end loop;
   htp.p('</tbody></table>');
   
-  dbms_sql.close_cursor(source_cursor);/*
+  dbms_sql.close_cursor(source_cursor);
 exception
   when others then
     if dbms_sql.is_open(source_cursor) then
        dbms_sql.close_cursor(source_cursor);
     end if;
-    raise;*/
+    raise;
 end;
 
-/* Main render function for pivot plug-in                           */
+/* Main render function for pivot plug-in                           
+     render flow:
+      - define columns: 
+           column 'category' for categories
+           column 'value' for aggregate function
+      - define list of aggregate function
+      - data calculation
+      - define sorting direction for categories
+      - data sorting
+      - output                             */
 function render(
   p_region              in apex_plugin.t_region,
   p_plugin              in apex_plugin.t_plugin,
@@ -196,17 +206,7 @@ function render(
   sort_categories  varchar2(4000);
   categories_sql   varchar2(4000); --q'[select distinct replace(category, '''', '''''') category from ]'
   select_cat_query varchar2(4000) := q'[select distinct category from ]';
-begin
-  /* render flow:
-      - define columns: 
-           column 'category' for categories
-           column 'value' for aggregate function
-      - define list of aggregate function
-      - data calculation
-      - define sorting direction for categories
-      - data sorting
-      - output        */
-  
+begin  
   columns_list := get_columns(p_region.source);
   
   query_result := apex_plugin_util.get_data (
@@ -276,15 +276,13 @@ begin
   
   
   drop_temp_table;
-  return null;/*
+  return null;
 exception
   when others then
     if temp_created then 
        drop_temp_table;
     end if;
-    raise;*/
-    --htp.p(replace(dbms_utility.format_error_backtrace, chr(10), '<br>'));
-    --return null;
+    raise;
 end;
 
 procedure create_demo is
