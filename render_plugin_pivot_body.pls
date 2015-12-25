@@ -230,19 +230,19 @@ procedure create_demo is
   pragma exception_init (demo_already_exists, -955);
 begin
   execute immediate 'create table fruit (id number, name varchar2(20))';
-  execute immediate 'create table sale (fruit_id number, cost number)';
+  execute immediate 'create table sale (fruit_id number, cost number, sale_date date)';
   execute immediate 'insert into fruit (id, name) values (1, ''apple'')';
   execute immediate 'insert into fruit (id, name) values (2, ''orange'')';
   execute immediate 'insert into fruit (id, name) values (3, ''mango'')';
-  execute immediate 'insert into sale (fruit_id, cost) values(1, 100)';
-  execute immediate 'insert into sale (fruit_id, cost) values(1, 200)';
-  execute immediate 'insert into sale (fruit_id, cost) values(1, 50)';
-  execute immediate 'insert into sale (fruit_id, cost) values(2, 30)';
-  execute immediate 'insert into sale (fruit_id, cost) values(2, 90)';
-  execute immediate 'insert into sale (fruit_id, cost) values(2, 135)';
-  execute immediate 'insert into sale (fruit_id, cost) values(2, 55)';
-  execute immediate 'insert into sale (fruit_id, cost) values(3, 95)';
-  execute immediate 'insert into sale (fruit_id, cost) values(3, 115)';  
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(1, 100, to_date(''01.01.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(1, 200, to_date(''05.01.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(1,  50, to_date(''01.02.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(2,  30, to_date(''01.01.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(2,  90, to_date(''12.02.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(2, 135, to_date(''01.03.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(2,  55, to_date(''11.01.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(3,  95, to_date(''01.02.2016'', ''dd.mm.yyyy''))';
+  execute immediate 'insert into sale (fruit_id, cost, sale_date) values(3, 115, to_date(''15.03.2016'', ''dd.mm.yyyy''))';  
 exception
   when demo_already_exists then
     raise_application_error(-20999, 'Unable to create demo tables. Check if demo already exists.');
