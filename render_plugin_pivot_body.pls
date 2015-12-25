@@ -204,8 +204,7 @@ function render(
   --i                number;
   temp_created     boolean;
   sort_categories  varchar2(4000);
-  categories_sql   varchar2(4000); --q'[select distinct replace(category, '''', '''''') category from ]'
-  select_cat_query varchar2(4000) := q'[select distinct category from ]';
+  categories_sql   varchar2(4000); 
 begin  
   columns_list := get_columns(p_region.source);
   
@@ -223,7 +222,7 @@ begin
   sort_categories := case when p_region.attribute_03 = 'asc'  then ' order by category'
                           when p_region.attribute_03 = 'desc' then ' order by category desc' end;
   -- get distinct list of categories:
-  execute immediate select_cat_query || temp_pivot_table || sort_categories 
+  execute immediate 'select distinct category from ' || temp_pivot_table || sort_categories 
     bulk collect into categories_list;
   
   -- calculate categories count for output:
