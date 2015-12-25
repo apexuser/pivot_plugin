@@ -1,6 +1,6 @@
 create or replace package body render_plugin_pivot as
 
-type varchar_table is table of varchar2(4000) index by binary_integer;
+type varchar_table is table of varchar2(32000) index by binary_integer;
 
 /* parses the region source query and returns the list of columns  */
 function get_columns (p_sql in varchar2) return dbms_sql.desc_tab is
@@ -88,7 +88,7 @@ begin
     insert_sql :='insert into ' || temp_pivot_table || ' values (';
     for j in p_data.first .. p_data.last loop
       insert_sql := insert_sql ||
-        case when p_columns(j).col_type = 1  then '''' || p_data(j)(i) || ''''
+        case when p_columns(j).col_type = 1  then '''' || replace(p_data(j)(i), '''', '''''') || ''''
              when p_columns(j).col_type = 2  then p_data(j)(i)
              when p_columns(j).col_type = 12 then 'to_date(''' || p_data(j)(i) || ''')'
         end;
@@ -132,6 +132,7 @@ procedure output_single_aggregate_pivot(p_sql in varchar2) is
   cell_text        varchar2(4000);
 begin
   source_cursor := dbms_sql.open_cursor;
+  --htp.p(p_sql); return;
   dbms_sql.parse(source_cursor, p_sql, 1);
   dbms_sql.describe_columns(source_cursor, col_count, columns_list);
   
@@ -187,14 +188,14 @@ function render(
   
   query_result     apex_plugin_util.t_column_value_list;
   category_count   number;
-  category_col_num number;
-  value_col_num    number;
+  --category_col_num number;
+  --value_col_num    number;
   columns_list     dbms_sql.desc_tab;
-  i                number;
-  s                varchar2(4000);
+  --i                number;
   temp_created     boolean;
-  sort_categories  varchar2(100);
-  categories_sql   varchar2(4000);
+  sort_categories  varchar2(4000);
+  categories_sql   varchar2(4000); --q'[select distinct replace(category, '''', '''''') category from ]'
+  select_cat_query varchar2(4000) := q'[select distinct category from ]';
 begin
   /* render flow:
       - define columns: 
@@ -208,15 +209,6 @@ begin
   
   columns_list := get_columns(p_region.source);
   
-  --  DEBUG PRINT COLUMNS LIST
-  /*
-  for i in columns_list.first .. columns_list.last loop
-    htp.p(' column = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
-  end loop;
-  */
-  category_col_num := get_column_index(columns_list, 'CATEGORY');
-  value_col_num    := get_column_index(columns_list, 'VALUE');
-
   query_result := apex_plugin_util.get_data (
       p_sql_statement      => p_region.source,
       p_min_columns        => 1,
@@ -227,25 +219,21 @@ begin
       p_search_string      => null);
 
   temp_created := create_temp_table(columns_list, query_result);
-  
+ -- return null;
   sort_categories := case when p_region.attribute_03 = 'asc'  then ' order by category'
                           when p_region.attribute_03 = 'desc' then ' order by category desc' end;
   -- get distinct list of categories:
-  execute immediate 'select distinct category from ' || temp_pivot_table || sort_categories 
+  execute immediate select_cat_query || temp_pivot_table || sort_categories 
     bulk collect into categories_list;
-  
---  for i in categories_list.first .. categories_list.last loop
---    htp.p('i = ' || i || ' cat = ' || categories_list(i) || '<br>');
- -- end loop;
-
   
   -- calculate categories count for output:
   category_count := least(nvl(to_number(p_region.attribute_02), categories_list.count), categories_list.count);
   for i in categories_list.first .. category_count loop
+    categories_sql := categories_sql || '''' || replace(categories_list(i), '''', '''''') || ''' "' || /*replace(*/categories_list(i)/*, '''', '')*/;
     if i = category_count then
-       categories_sql := categories_sql || '''' || categories_list(i) || ''' "' || replace(categories_list(i), '''', '') || '"';
+       categories_sql := categories_sql || '"';
     else
-       categories_sql := categories_sql || '''' || categories_list(i) || ''' "' || replace(categories_list(i), '''', '') || '", ';
+       categories_sql := categories_sql || '", ';
     end if;
   end loop;
   
@@ -276,41 +264,16 @@ begin
   
 
   
-  
-/*  
-  s := categories_list.first;
-  while s is not null loop
-    htp.p('s = ' || s || ' category = ' || categories_list(s) || '<br>');
-    s := categories_list.next(s);
-  end loop;*/
+  --  DEBUG PRINT COLUMNS LIST
   /*
-  for i in categories_list.first .. categories_list.last loop
-    htp.p('i = ' || i || ' category = ' || categories_list(i) || '<br>');
-  
+  for i in columns_list.first .. columns_list.last loop
+    htp.p(' column = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
   end loop;
-  */
-  -- test output:
-  /*
-  htp.p('<table class="t-Report-report" summary="' || p_region.name || '">');
-  htp.p(header_html);
-  htp.p('<tbody></tbody></table><br>');
-
-  htp.p('t_plugin output<br>');
-  htp.p('name = ' || p_plugin.name || '<br>');
-  htp.p('file_prefix = ' || p_plugin.file_prefix || '<br>');
-  htp.p('attribute_01 = ' || p_plugin.attribute_01 || '<br>');
-  htp.p('attribute_02 = ' || p_plugin.attribute_02 || '<br>');
-  htp.p('attribute_03 = ' || p_plugin.attribute_03 || '<br>');
-  htp.p('attribute_04 = ' || p_plugin.attribute_04 || '<br>');
   
-  htp.p('p_region output<br>');
-  htp.p('name = ' || p_region.name || '<br>');
-  htp.p('id = ' || p_region.id || '<br>');
-  htp.p('attribute_01 = ' || p_region.attribute_01 || '<br>');
-  htp.p('attribute_02 = ' || p_region.attribute_02 || '<br>');
-  htp.p('attribute_03 = ' || p_region.attribute_03 || '<br>');
-  htp.p('attribute_04 = ' || p_region.attribute_04 || '<br>');
-  */
+  category_col_num := get_column_index(columns_list, 'CATEGORY');
+  value_col_num    := get_column_index(columns_list, 'VALUE');
+*/
+  
   
   drop_temp_table;
   return null;/*
@@ -319,7 +282,7 @@ exception
     if temp_created then 
        drop_temp_table;
     end if;
-    raise_application_error(SQLCODE, SQLERRM, false);*/
+    raise;*/
     --htp.p(replace(dbms_utility.format_error_backtrace, chr(10), '<br>'));
     --return null;
 end;
