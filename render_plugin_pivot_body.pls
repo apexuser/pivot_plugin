@@ -225,4 +225,28 @@ exception
     --return null;
 end;
 
+procedure create_demo is
+  demo_already_exists exception;
+  pragma exception_init (demo_already_exists, -955);
+begin
+  execute immediate 'create table fruit (id number, name varchar2(20))';
+  execute immediate 'create table sale (fruit_id number, cost number)';
+  execute immediate 'insert into fruit (id, name) values (1, ''apple'')';
+  execute immediate 'insert into fruit (id, name) values (2, ''orange'')';
+  execute immediate 'insert into fruit (id, name) values (3, ''mango'')';
+  execute immediate 'insert into sale (fruit_id, cost) values(1, 100)';
+  execute immediate 'insert into sale (fruit_id, cost) values(1, 200)';
+  execute immediate 'insert into sale (fruit_id, cost) values(1, 50)';
+  execute immediate 'insert into sale (fruit_id, cost) values(2, 30)';
+  execute immediate 'insert into sale (fruit_id, cost) values(2, 90)';
+  execute immediate 'insert into sale (fruit_id, cost) values(2, 135)';
+  execute immediate 'insert into sale (fruit_id, cost) values(2, 55)';
+  execute immediate 'insert into sale (fruit_id, cost) values(3, 95)';
+  execute immediate 'insert into sale (fruit_id, cost) values(3, 115)';  
+exception
+  when demo_already_exists then
+    raise_application_error(-20999, 'Unable to create demo tables. Check if demo already exists.');
+end;
+
+
 end render_plugin_pivot;

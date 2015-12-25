@@ -7,5 +7,6 @@ function render(
   p_plugin              in apex_plugin.t_plugin,
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result;
   
+procedure create_demo;
 
 end render_plugin_pivot;
