@@ -33,7 +33,7 @@ wwv_flow_api.create_plugin(
 ,p_name=>'PIVOT'
 ,p_display_name=>'Pivot plug-in'
 ,p_supported_ui_types=>'DESKTOP'
-,p_render_function=>'dev.render_plugin_pivot.render'
+,p_render_function=>'render_plugin_pivot.render'
 ,p_standard_attributes=>'SOURCE_SQL:SOURCE_REQUIRED:NO_DATA_FOUND_MESSAGE'
 ,p_sql_min_column_count=>1
 ,p_substitute_attributes=>true
