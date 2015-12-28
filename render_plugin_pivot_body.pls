@@ -184,7 +184,7 @@ begin
                                     '#ALIGNMENT#', ' colspan="' || p_aggr_list.count || '"'));
      end loop;
      
-     htp.p('</tr><>');
+     htp.p('</tr>');
      
      for i in p_categories.first .. p_categories.last loop
        for j in p_aggr_list.first .. p_aggr_list.last loop
@@ -196,8 +196,7 @@ begin
        end loop;
      end loop;
 
-    htp.p('</tr></thead><tbody>');
-    htp.p('</tbody>');
+    
    -- dbms_sql.close_cursor(source_cursor);
   --  return;
   end if;
