@@ -2,6 +2,24 @@ create or replace package body render_plugin_pivot as
 
 type varchar_table is table of varchar2(32000) index by binary_integer;
 
+/* Searches for column with name P_COLUMN_NAME in collection P_COLL.
+   Raises an exception if not found.                                 */
+procedure check_column_presence(p_coll        in dbms_sql.desc_tab,
+                                p_column_name in varchar2) is
+
+  col_number number;
+begin
+  for i in p_coll.first .. p_coll.last loop
+    if p_coll(i).col_name = p_column_name then
+       col_number := i;
+    end if;
+  end loop;
+  
+  if col_number is null then
+     raise_application_error(-20000, 'Column ' || p_column_name || ' is not present in the source SQL query of Pivot plug-in.');
+  end if;
+end;
+
 /* parses the region source query and returns the list of columns  */
 function get_columns (p_sql in varchar2) return dbms_sql.desc_tab is
   source_cursor    number;
@@ -13,6 +31,9 @@ begin
   dbms_sql.describe_columns(source_cursor, col_count, columns_list);
   dbms_sql.close_cursor(source_cursor);
 
+  check_column_presence(columns_list, 'CATEGORY');
+  check_column_presence(columns_list, 'VALUE');
+
   return columns_list;
 exception
   when others then
@@ -20,26 +41,6 @@ exception
        dbms_sql.close_cursor(source_cursor);
     end if;
     raise;
-end;
-
-/* Searches for column with name P_COLUMN_NAME in collection P_COLL.
-   Raises an exception if not found.                                 */
-function get_column_index(p_coll        in dbms_sql.desc_tab,
-                          p_column_name in varchar2) return number is
-
-  col_number number;
-begin
-  for i in p_coll.first .. p_coll.last loop
-    if p_coll(i).col_name = p_column_name then
-       col_number := i;
-    end if;
-  end loop;
-  
-  if col_number is null then
-     raise_application_error(-20001, 'Column ' || p_column_name || ' is not present in the source SQL query of Pivot plug-in.');
-  end if;
-
-  return col_number;
 end;
 
 /* Drops temporary table. */
@@ -122,14 +123,17 @@ begin
 end;
 
 /* Outputs to a page a single pivot report */
-procedure output_single_aggregate_pivot(p_sql in varchar2) is
+procedure output_single_aggregate_pivot(p_sql           in varchar2,
+                                        p_columns       in dbms_sql.desc_tab,
+                                        p_categories    in varchar_table,
+                                        p_aggr_list     in varchar_table) is
   source_cursor    number;
   col_count        number;
   columns_list     dbms_sql.desc_tab;
   str_var          varchar2(4000);
   num_var          number;
   dat_var          date;
-  head_template    varchar2(100) := '<th class="t-Report-colHead" id="#COLUMN_HEADER_NAME#">#COLUMN_HEADER#</th>';
+  head_template    varchar2(100) := '<td class="t-Report-colHead" id="#COLUMN_HEADER_NAME#" #ALIGNMENT#>#COLUMN_HEADER#</th>';
   cell_template    varchar2(100) := '<td class="t-Report-cell" #ALIGNMENT#>#COLUMN_VALUE#</td>';
   cell_text        varchar2(4000);
 begin
@@ -137,32 +141,100 @@ begin
   dbms_sql.parse(source_cursor, p_sql, 1);
   dbms_sql.describe_columns(source_cursor, col_count, columns_list);
   
+/*            for i in columns_list.first .. columns_list.last loop
+              htp.p('i = ' || i || ' name = ' || columns_list(i).col_name || '<br>');
+            end loop;
+  */          --dbms_sql.close_cursor(source_cursor);
+            --return;
+  
   htp.p('<table class="t-Report-report"><thead><tr>');
-  for i in columns_list.first .. columns_list.last loop
-    case when columns_list(i).col_type =  1 then dbms_sql.define_column(source_cursor, i, str_var, 4000);
-         when columns_list(i).col_type =  2 then dbms_sql.define_column(source_cursor, i, num_var);
-         when columns_list(i).col_type = 12 then dbms_sql.define_column(source_cursor, i, dat_var);
-    end case;
-    htp.p(replace(replace(head_template, '#COLUMN_HEADER_NAME#', columns_list(i).col_name), '#COLUMN_HEADER#', columns_list(i).col_name));
-  end loop;
+     for i in columns_list.first .. columns_list.last loop
+       case when columns_list(i).col_type =  1 then dbms_sql.define_column(source_cursor, i, str_var, 4000);
+            when columns_list(i).col_type =  2 then dbms_sql.define_column(source_cursor, i, num_var);
+            when columns_list(i).col_type = 12 then dbms_sql.define_column(source_cursor, i, dat_var);
+       end case;
+     end loop;
+  if p_aggr_list.count = 1 then
+     -- single pivot query header
+     for i in columns_list.first .. columns_list.last loop
+       htp.p(replace(
+               replace(
+                 replace(head_template, '#COLUMN_HEADER_NAME#', columns_list(i).col_name), 
+                                        '#COLUMN_HEADER#', columns_list(i).col_name),
+                                        '#ALIGNMENT#', ''));
+     end loop;
+  else
   
+     -- multiple pivot query header
+     for i in p_columns.first .. p_columns.last loop
+       if p_columns(i).col_name not in ('CATEGORY', 'VALUE') then
+          htp.p(replace(
+               replace(
+                 replace(head_template, '#COLUMN_HEADER_NAME#', p_columns(i).col_name), 
+                                        '#COLUMN_HEADER#', p_columns(i).col_name),
+                                        '#ALIGNMENT#', ' rowspan="2"'));
+       end if;
+     end loop;
+     
+     for i in p_categories.first .. p_categories.last loop
+       htp.p(replace(
+             replace(
+             replace(head_template, '#COLUMN_HEADER_NAME#', p_categories(i)), 
+                                    '#COLUMN_HEADER#', p_categories(i)),
+                                    '#ALIGNMENT#', ' colspan="' || p_aggr_list.count || '"'));
+     end loop;
+     
+     htp.p('</tr><>');
+     
+     for i in p_categories.first .. p_categories.last loop
+       for j in p_aggr_list.first .. p_aggr_list.last loop
+         htp.p(replace(
+               replace(
+                 replace(head_template, '#COLUMN_HEADER_NAME#', ''), 
+                                        '#COLUMN_HEADER#', p_aggr_list(j)),
+                                        '#ALIGNMENT#', ''));
+       end loop;
+     end loop;
+
+    htp.p('</tr></thead><tbody>');
+    htp.p('</tbody>');
+   -- dbms_sql.close_cursor(source_cursor);
+  --  return;
+  end if;
   htp.p('</tr></thead><tbody>');
-  
+    
+ 
   num_var := dbms_sql.execute(source_cursor);
   while dbms_sql.fetch_rows(source_cursor) > 0 loop
     htp.p('<tr>');
-    for i in columns_list.first .. columns_list.last loop
-      case when columns_list(i).col_type =  1 then 
-                dbms_sql.column_value(source_cursor, i, str_var);
-                cell_text := replace(replace(cell_template, '#ALIGNMENT#', ''), '#COLUMN_VALUE#', str_var);
-           when columns_list(i).col_type =  2 then 
-                dbms_sql.column_value(source_cursor, i, num_var);
-                cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', num_var);
-           when columns_list(i).col_type = 12 then dbms_sql.column_value(source_cursor, i, dat_var);
-                cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', dat_var);
-      end case;
-      htp.p(cell_text);
-    end loop;
+    if p_aggr_list.count = 1 then
+      for i in columns_list.first .. columns_list.last loop
+        case when columns_list(i).col_type =  1 then 
+                  dbms_sql.column_value(source_cursor, i, str_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', ''), '#COLUMN_VALUE#', str_var);
+             when columns_list(i).col_type =  2 then 
+                  dbms_sql.column_value(source_cursor, i, num_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', num_var);
+             when columns_list(i).col_type = 12 then dbms_sql.column_value(source_cursor, i, dat_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', dat_var);
+        end case;
+        htp.p(cell_text);
+      end loop;
+    else
+      for i in columns_list.first .. columns_list.last loop
+   --     htp.p('i = ' || i || ' name = ' || columns_list(i).col_name || ' type = ' || columns_list(i).col_type || '<br>');
+        case when columns_list(i).col_type =  1 then 
+                  dbms_sql.column_value(source_cursor, i, str_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', ''), '#COLUMN_VALUE#', str_var);
+             when columns_list(i).col_type =  2 then 
+                  dbms_sql.column_value(source_cursor, i, num_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', num_var);
+             when columns_list(i).col_type = 12 then dbms_sql.column_value(source_cursor, i, dat_var);
+                  cell_text := replace(replace(cell_template, '#ALIGNMENT#', 'align="right"'), '#COLUMN_VALUE#', dat_var);
+        end case;
+        htp.p(cell_text);
+      end loop;
+    end if;
     htp.p('</tr>');
   end loop;
   htp.p('</tbody></table>');
@@ -173,7 +245,60 @@ exception
     if dbms_sql.is_open(source_cursor) then
        dbms_sql.close_cursor(source_cursor);
     end if;
-    raise;
+    --raise;
+end;
+
+procedure output_multi_aggregate_pivot(p_queries         in varchar_table,
+                                       p_columns         in dbms_sql.desc_tab,
+                                       p_categories      in varchar_table,
+                                       p_aggregates_list in varchar_table) is
+  uni_query varchar2(32767) := 'select ';
+begin
+  -- SELECT clause
+  for i in p_columns.first .. p_columns.last loop
+    if p_columns(i).col_name not in ('CATEGORY', 'VALUE') then
+       uni_query := uni_query || 't1.' || p_columns(i).col_name || ' "' || p_columns(i).col_name || '", ';
+    end if;
+  end loop;
+
+  for j in p_categories.first .. p_categories.last loop
+    for i in p_queries.first .. p_queries.last loop
+      uni_query := uni_query || 't' || i || '."' || p_categories(j) || '" "' || 't' || i || '_' || p_categories(j) || '"';
+      
+      if i = p_queries.last and j = p_categories.last then
+         uni_query := uni_query || chr(10) || ' from ';
+      else
+         uni_query := uni_query || ', ';
+      end if;
+    end loop;
+  end loop;
+
+  -- FROM clause
+  for i in p_queries.first .. p_queries.last loop
+    uni_query := uni_query || ' (' || p_queries(i) || ') t' || i;
+    if i = p_queries.last then
+       uni_query := uni_query || chr(10) || ' where ';
+    else
+       uni_query := uni_query || ', ' || chr(10);
+    end if;
+  end loop;
+  
+  -- WHERE clause
+  for i in p_columns.first .. p_columns.last loop
+    for j in (p_queries.first + 1) .. p_queries.last loop
+      if p_columns(i).col_name not in ('CATEGORY', 'VALUE') then
+         uni_query := uni_query || 't1.' || p_columns(i).col_name || ' = t' || j || '.' || p_columns(i).col_name;
+
+         if i <> p_columns.last and j <> p_queries.last then
+            uni_query := uni_query || ' and ';
+        end if;
+      end if;
+    end loop;
+  end loop;
+  
+  --htp.p(replace(uni_query, chr(10), '<br>'));
+
+  output_single_aggregate_pivot(uni_query, p_columns, p_categories, p_aggregates_list);
 end;
 
 /* Main render function for pivot plug-in                           
@@ -198,8 +323,6 @@ function render(
   
   query_result     apex_plugin_util.t_column_value_list;
   category_count   number;
-  --category_col_num number;
-  --value_col_num    number;
   columns_list     dbms_sql.desc_tab;
   --i                number;
   temp_created     boolean;
@@ -249,8 +372,11 @@ begin
   end loop;
 
   -- output single query result:
-  output_single_aggregate_pivot(pivot_queries(pivot_queries.first));
-  
+  if pivot_queries.count = 1 then
+     output_single_aggregate_pivot(pivot_queries(pivot_queries.first), columns_list, categories_list, aggregates_list);
+  else
+     output_multi_aggregate_pivot(pivot_queries, columns_list, categories_list, aggregates_list);
+  end if;
   
 
 /*
@@ -275,13 +401,13 @@ begin
   
   
   drop_temp_table;
-  return null;
+  return null;/*
 exception
   when others then
     if temp_created then 
        drop_temp_table;
     end if;
-    raise;
+    raise;*/
 end;
 
 procedure create_demo is
