@@ -2,6 +2,36 @@ create or replace package body render_plugin_pivot as
 
 type varchar_table is table of varchar2(32000) index by binary_integer;
 
+/* Replaces up to 5 values         */
+function multi_replace(p_source        in varchar2,
+                       p_string1       in varchar2,
+                       p_replace_with1 in varchar2,
+                       p_string2       in varchar2 default null,
+                       p_replace_with2 in varchar2 default null,
+                       p_string3       in varchar2 default null,
+                       p_replace_with3 in varchar2 default null,
+                       p_string4       in varchar2 default null,
+                       p_replace_with4 in varchar2 default null,
+                       p_string5       in varchar2 default null,
+                       p_replace_with5 in varchar2 default null) return varchar2 is
+  result varchar2(32767);
+begin
+  result := replace(p_source, p_string1, p_replace_with1);
+  if p_string2 is not null then
+     result := replace(result, p_string2, p_replace_with2);
+  end if;
+  if p_string3 is not null then
+     result := replace(result, p_string3, p_replace_with3);
+  end if;
+  if p_string4 is not null then
+     result := replace(result, p_string4, p_replace_with4);
+  end if;
+  if p_string5 is not null then
+     result := replace(result, p_string5, p_replace_with5);
+  end if;
+  return result;
+end;
+
 /* Removes unnecessary columns CATEGORY and VALUE from columns list collection  */
 function remove_unused (p_coll in dbms_sql.desc_tab) return dbms_sql.desc_tab is
   new_coll dbms_sql.desc_tab;
@@ -167,39 +197,31 @@ begin
   if p_aggr_list.count = 1 then
      -- single pivot query header
      for i in columns_list.first .. columns_list.last loop
-       htp.p(replace(
-               replace(
-                 replace(head_template, '#COLUMN_HEADER_NAME#', columns_list(i).col_name), 
-                                        '#COLUMN_HEADER#', columns_list(i).col_name),
-                                        '#ALIGNMENT#', ''));
+       htp.p(multi_replace(head_template, '#COLUMN_HEADER_NAME#', columns_list(i).col_name, 
+                                          '#COLUMN_HEADER#',      columns_list(i).col_name,
+                                          '#ALIGNMENT#',          ''));
      end loop;
   else
      -- multiple pivot query header
      for i in p_columns.first .. p_columns.last loop
-       htp.p(replace(
-             replace(
-             replace(head_template, '#COLUMN_HEADER_NAME#', p_columns(i).col_name), 
-                                    '#COLUMN_HEADER#', p_columns(i).col_name),
-                                    '#ALIGNMENT#', ' rowspan="2"'));
+       htp.p(multi_replace(head_template, '#COLUMN_HEADER_NAME#', p_columns(i).col_name, 
+                                          '#COLUMN_HEADER#',      p_columns(i).col_name,
+                                          '#ALIGNMENT#',          ' rowspan="2"'));
      end loop;
      
      for i in p_categories.first .. p_categories.last loop
-       htp.p(replace(
-             replace(
-             replace(head_template, '#COLUMN_HEADER_NAME#', p_categories(i)), 
-                                    '#COLUMN_HEADER#', p_categories(i)),
-                                    '#ALIGNMENT#', ' colspan="' || p_aggr_list.count || '"'));
+       htp.p(multi_replace(head_template, '#COLUMN_HEADER_NAME#', p_categories(i), 
+                                          '#COLUMN_HEADER#',      p_categories(i),
+                                          '#ALIGNMENT#',          ' colspan="' || p_aggr_list.count || '"'));
      end loop;
      
      htp.p('</tr>');
      
      for i in p_categories.first .. p_categories.last loop
        for j in p_aggr_list.first .. p_aggr_list.last loop
-         htp.p(replace(
-               replace(
-                 replace(head_template, '#COLUMN_HEADER_NAME#', ''), 
-                                        '#COLUMN_HEADER#', p_aggr_list(j)),
-                                        '#ALIGNMENT#', ''));
+         htp.p(multi_replace(head_template, '#COLUMN_HEADER_NAME#', '', 
+                                            '#COLUMN_HEADER#',      p_aggr_list(j),
+                                            '#ALIGNMENT#',          ''));
        end loop;
      end loop;
 
@@ -355,7 +377,7 @@ begin
   end if;
   output_single_aggregate_pivot(final_query, columns_list, categories_list, aggregates_list);
 
-  drop_temp_table;
+ -- drop_temp_table;
   return null;/*
 exception
   when others then
