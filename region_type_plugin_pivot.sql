@@ -97,7 +97,7 @@ wwv_flow_api.create_plugin_attribute(
 ,p_help_text=>'Define maximum count of category columns. If query returns too much of categories, report contains only first "Max categories count" of them. Use NULL to output all categories.'
 );
 wwv_flow_api.create_plugin_attribute(
- p_id=>wwv_flow_api.id(3874845282886761)
+ p_id=>wwv_flow_api.id(3893579667960259)
 ,p_plugin_id=>wwv_flow_api.id(7116674869879485)
 ,p_attribute_scope=>'COMPONENT'
 ,p_attribute_sequence=>3
@@ -110,25 +110,25 @@ wwv_flow_api.create_plugin_attribute(
 ,p_lov_type=>'STATIC'
 );
 wwv_flow_api.create_plugin_attr_value(
- p_id=>wwv_flow_api.id(3875701028887755)
-,p_plugin_attribute_id=>wwv_flow_api.id(3874845282886761)
+ p_id=>wwv_flow_api.id(3894446798961061)
+,p_plugin_attribute_id=>wwv_flow_api.id(3893579667960259)
 ,p_display_sequence=>10
 ,p_display_value=>'Do not sort'
 ,p_return_value=>' '
 );
 wwv_flow_api.create_plugin_attr_value(
- p_id=>wwv_flow_api.id(3876167196888651)
-,p_plugin_attribute_id=>wwv_flow_api.id(3874845282886761)
+ p_id=>wwv_flow_api.id(3894812910963350)
+,p_plugin_attribute_id=>wwv_flow_api.id(3893579667960259)
 ,p_display_sequence=>20
 ,p_display_value=>'Ascending'
-,p_return_value=>'order by category'
+,p_return_value=>' order by category asc'
 );
 wwv_flow_api.create_plugin_attr_value(
- p_id=>wwv_flow_api.id(3876534234889673)
-,p_plugin_attribute_id=>wwv_flow_api.id(3874845282886761)
+ p_id=>wwv_flow_api.id(3895213196964334)
+,p_plugin_attribute_id=>wwv_flow_api.id(3893579667960259)
 ,p_display_sequence=>30
 ,p_display_value=>'Descending'
-,p_return_value=>'order by category desc'
+,p_return_value=>' order by category desc'
 );
 wwv_flow_api.create_plugin_attribute(
  p_id=>wwv_flow_api.id(3880366425258400)

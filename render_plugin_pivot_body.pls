@@ -345,7 +345,6 @@ function render(
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result is
 
   categories_list  varchar_table;
-  --aggregates_list  varchar_table;
   pivot_queries    varchar_table;
   header_html      varchar2(32767);
   
@@ -360,10 +359,10 @@ function render(
 begin
   reg_properties := get_region_properties(p_region);
   
-  columns_list := get_columns(p_region.source);
+  columns_list := get_columns(reg_properties.source_sql);
   
   query_result := apex_plugin_util.get_data (
-      p_sql_statement      => p_region.source,
+      p_sql_statement      => reg_properties.source_sql,
       p_min_columns        => 1,
       p_max_columns        => 20,
       p_component_name     => p_region.name,
@@ -375,11 +374,11 @@ begin
   columns_list := remove_unused(columns_list);
 
   -- get distinct list of categories:
-  execute immediate 'select distinct category from ' || temp_pivot_table || p_region.attribute_03 
+  execute immediate 'select distinct category from ' || temp_pivot_table || reg_properties.sort_categories
     bulk collect into categories_list;
   
   -- calculate categories count for output:
-  category_count := least(nvl(to_number(p_region.attribute_02), categories_list.count), categories_list.count);
+  category_count := least(nvl(to_number(reg_properties.categories_count), categories_list.count), categories_list.count);
   for i in categories_list.first .. category_count loop
     categories_sql := categories_sql || '''' || replace(categories_list(i), '''', '''''') || ''' "' || categories_list(i);
     if i = category_count then
@@ -403,13 +402,14 @@ begin
   output_single_aggregate_pivot(final_query, columns_list, categories_list, reg_properties.aggregates_list);
 
  -- drop_temp_table;
-  return null;/*
+  return null;
 exception
   when others then
     if temp_created then 
        drop_temp_table;
     end if;
-    raise;*/
+    return null;
+ /*   raise;*/
 end;
 
 procedure create_demo is
