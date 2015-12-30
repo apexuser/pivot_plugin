@@ -2,6 +2,15 @@ create or replace package body render_plugin_pivot as
 
 type varchar_table is table of varchar2(32000) index by binary_integer;
 
+type t_region_properties is record (
+  source_sql       varchar2(32767),
+  aggregates_list  varchar_table,
+  categories_count number,
+  sort_categories  varchar2(100),
+  totals_in_rows   boolean,
+  totals_in_cols   boolean
+);
+
 /* Replaces up to 5 values         */
 function multi_replace(p_source        in varchar2,
                        p_string1       in varchar2,
@@ -301,6 +310,25 @@ begin
   return uni_query;
 end;
 
+/* Transform custom region plugin properites to appropriate format     */
+function get_region_properties (p_region in apex_plugin.t_region) return t_region_properties is
+  p t_region_properties;
+begin
+  p.source_sql := p_region.source;
+
+  -- get list of aggregate functions for pivot:
+  select regexp_substr(p_region.attribute_01,'[^:]+', 1, level) 
+    bulk collect into p.aggregates_list
+    from dual
+ connect by regexp_substr(p_region.attribute_01,'[^:]+', 1, level) is not null;
+  
+  p.categories_count := to_number(p_region.attribute_02);
+  p.sort_categories := p_region.attribute_03;
+  p.totals_in_rows := nvl(instr(p_region.attribute_04, 'rows') > 0, false);
+  p.totals_in_cols := nvl(instr(p_region.attribute_04, 'cols') > 0, false);
+  return p;
+end;
+
 /* Main render function for pivot plug-in                           
      render flow:
       - define columns: 
@@ -317,7 +345,7 @@ function render(
   p_is_printer_friendly in boolean) return apex_plugin.t_region_render_result is
 
   categories_list  varchar_table;
-  aggregates_list  varchar_table;
+  --aggregates_list  varchar_table;
   pivot_queries    varchar_table;
   header_html      varchar2(32767);
   
@@ -328,7 +356,10 @@ function render(
   sort_categories  varchar2(4000);
   categories_sql   varchar2(4000);
   final_query      varchar2(32000);
-begin  
+  reg_properties   t_region_properties;
+begin
+  reg_properties := get_region_properties(p_region);
+  
   columns_list := get_columns(p_region.source);
   
   query_result := apex_plugin_util.get_data (
@@ -358,14 +389,8 @@ begin
     end if;
   end loop;
   
-  -- get list of aggregate functions for pivot:
-  select regexp_substr(p_region.attribute_01,'[^:]+', 1, level) 
-    bulk collect into aggregates_list
-    from dual
- connect by regexp_substr(p_region.attribute_01,'[^:]+', 1, level) is not null;
-  
-  for i in aggregates_list.first .. aggregates_list.last loop
-    pivot_queries(i) := get_pivot_query(aggregates_list(i), categories_sql);
+  for i in reg_properties.aggregates_list.first .. reg_properties.aggregates_list.last loop
+    pivot_queries(i) := get_pivot_query(reg_properties.aggregates_list(i), categories_sql);
 --    htp.p('pivot query for ' || aggregates_list(i) || ' is: ' || get_pivot_query(aggregates_list(i), categories_sql) || '<br>' || '<br>');
   end loop;
 
@@ -375,7 +400,7 @@ begin
   else
      final_query := get_multi_pivot_query(pivot_queries, columns_list, categories_list);
   end if;
-  output_single_aggregate_pivot(final_query, columns_list, categories_list, aggregates_list);
+  output_single_aggregate_pivot(final_query, columns_list, categories_list, reg_properties.aggregates_list);
 
  -- drop_temp_table;
   return null;/*

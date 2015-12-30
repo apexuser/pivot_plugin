@@ -130,6 +130,34 @@ wwv_flow_api.create_plugin_attr_value(
 ,p_display_value=>'Descending'
 ,p_return_value=>'order by category desc'
 );
+wwv_flow_api.create_plugin_attribute(
+ p_id=>wwv_flow_api.id(3880366425258400)
+,p_plugin_id=>wwv_flow_api.id(7116674869879485)
+,p_attribute_scope=>'COMPONENT'
+,p_attribute_sequence=>4
+,p_display_sequence=>40
+,p_prompt=>'Totals'
+,p_attribute_type=>'CHECKBOXES'
+,p_is_required=>false
+,p_supported_ui_types=>'DESKTOP'
+,p_is_translatable=>false
+,p_lov_type=>'STATIC'
+,p_help_text=>'Calculate totals for each row/category and for each aggregate function.'
+);
+wwv_flow_api.create_plugin_attr_value(
+ p_id=>wwv_flow_api.id(3881217687260145)
+,p_plugin_attribute_id=>wwv_flow_api.id(3880366425258400)
+,p_display_sequence=>10
+,p_display_value=>'In rows'
+,p_return_value=>'rows'
+);
+wwv_flow_api.create_plugin_attr_value(
+ p_id=>wwv_flow_api.id(3881689371261674)
+,p_plugin_attribute_id=>wwv_flow_api.id(3880366425258400)
+,p_display_sequence=>20
+,p_display_value=>'In columns'
+,p_return_value=>'cols'
+);
 end;
 /
 begin
