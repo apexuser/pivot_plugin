@@ -11,6 +11,8 @@ type t_region_properties is record (
   totals_in_cols   boolean
 );
 
+reg_properties   t_region_properties;
+
 /* Replaces up to 5 values         */
 function multi_replace(p_source        in varchar2,
                        p_string1       in varchar2,
@@ -161,17 +163,44 @@ end;
 
 /* Builds pivot query for given aggregate function    */
 function get_pivot_query(p_aggr_function    in varchar2,
-                         p_categories_list  in varchar2) return varchar2 is
-  pivot_query varchar2(4000);
-  
+                         p_categories_list  in varchar_table,
+                         p_columns_list     in dbms_sql.desc_tab) return varchar2 is
+  pivot_query     varchar2(4000);
+  categories_sql  varchar2(4000);  
+  category_count  number;
+  totals_col_name varchar2(30) := 'Row totals';
+  aggregate_sql   varchar2(4000);
+  select_clause   varchar2(4000);
+  where_clause    varchar2(4000);
 begin
-  pivot_query := 'select * from ' || temp_pivot_table || ' pivot (' ||
-      case when p_aggr_function = 'sum'     then 'sum(value) ' 
-           when p_aggr_function = 'count'   then 'count(value) ' 
-           when p_aggr_function = 'avg'     then 'avg(value) ' 
-           when p_aggr_function = 'listagg' then 'listagg(value, '', '') within group (order by value) ' 
-           end || 
-      ' for category in (' || p_categories_list || '))';
+  -- calculate categories count for output:
+  category_count := least(nvl(to_number(reg_properties.categories_count), p_categories_list.count), p_categories_list.count);
+  for i in p_categories_list.first .. category_count loop
+    categories_sql := categories_sql || '''' || replace(p_categories_list(i), '''', '''''') || ''' "' || p_categories_list(i) || 
+        case when i = category_count then '" ' else '", ' end;
+  end loop;
+  
+  aggregate_sql := case when p_aggr_function = 'sum'     then 'sum(value) ' 
+                        when p_aggr_function = 'count'   then 'count(value) ' 
+                        when p_aggr_function = 'avg'     then 'avg(value) ' 
+                        when p_aggr_function = 'listagg' then 'listagg(value, '', '') within group (order by value) ' 
+                   end;
+  
+  if reg_properties.totals_in_rows then
+     categories_sql := categories_sql || ', ''' || totals_col_name || ''' "' || totals_col_name || '"';
+     for i in p_columns_list.first .. p_columns_list.last loop
+       select_clause := select_clause || '"' || p_columns_list(i).col_name || '",';
+       where_clause := where_clause || '"' || p_columns_list(i).col_name || '" is not null ' ||
+            case when i = p_columns_list.last then ' ' else ' and ' end;
+     end loop;
+     pivot_query := 'select * from (select * from (select ' || select_clause ||
+         ' nvl(to_char(category), ''' || totals_col_name || ''') category, ' || aggregate_sql || ' value ' ||
+          'from temp_pivot_table group by rollup(' || select_clause || ' category)) where ' || where_clause || ')';
+  else
+     pivot_query := 'select * from ' || temp_pivot_table;
+  end if;
+
+  pivot_query := pivot_query || ' pivot (' || aggregate_sql || ' for category in (' || categories_sql || '))';
   
   return pivot_query;
 end;
@@ -262,7 +291,7 @@ exception
     if dbms_sql.is_open(source_cursor) then
        dbms_sql.close_cursor(source_cursor);
     end if;
-    raise;
+   /* raise;*/
 end;
 
 function get_multi_pivot_query(p_queries         in varchar_table,
@@ -349,13 +378,10 @@ function render(
   header_html      varchar2(32767);
   
   query_result     apex_plugin_util.t_column_value_list;
-  category_count   number;
   columns_list     dbms_sql.desc_tab;
   temp_created     boolean;
   sort_categories  varchar2(4000);
-  categories_sql   varchar2(4000);
   final_query      varchar2(32000);
-  reg_properties   t_region_properties;
 begin
   reg_properties := get_region_properties(p_region);
   
@@ -377,20 +403,9 @@ begin
   execute immediate 'select distinct category from ' || temp_pivot_table || reg_properties.sort_categories
     bulk collect into categories_list;
   
-  -- calculate categories count for output:
-  category_count := least(nvl(to_number(reg_properties.categories_count), categories_list.count), categories_list.count);
-  for i in categories_list.first .. category_count loop
-    categories_sql := categories_sql || '''' || replace(categories_list(i), '''', '''''') || ''' "' || categories_list(i);
-    if i = category_count then
-       categories_sql := categories_sql || '"';
-    else
-       categories_sql := categories_sql || '", ';
-    end if;
-  end loop;
-  
   for i in reg_properties.aggregates_list.first .. reg_properties.aggregates_list.last loop
-    pivot_queries(i) := get_pivot_query(reg_properties.aggregates_list(i), categories_sql);
---    htp.p('pivot query for ' || aggregates_list(i) || ' is: ' || get_pivot_query(aggregates_list(i), categories_sql) || '<br>' || '<br>');
+    pivot_queries(i) := get_pivot_query(reg_properties.aggregates_list(i), categories_list, columns_list);
+    htp.p('pivot query for ' || reg_properties.aggregates_list(i) || ' is: ' || pivot_queries(i) || '<br>' || '<br>');
   end loop;
 
   -- output single query result:
@@ -402,14 +417,14 @@ begin
   output_single_aggregate_pivot(final_query, columns_list, categories_list, reg_properties.aggregates_list);
 
  -- drop_temp_table;
-  return null;
+  return null;/*
 exception
   when others then
     if temp_created then 
        drop_temp_table;
     end if;
     return null;
- /*   raise;*/
+    raise;*/
 end;
 
 procedure create_demo is
